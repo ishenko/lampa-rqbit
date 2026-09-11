@@ -6,7 +6,7 @@ No APK, TorrServer bridge, or video proxy.
 Plugin URL for CUB personal plugins:
 
 ```
-https://raw.githubusercontent.com/ishenko/lampa-rqbit/main/rqbit.js
+https://ishenko.github.io/lampa-rqbit/rqbit.js
 ```
 
 The router must already provide stock rqbit at `http://192.168.1.1:3030` and
