@@ -33,4 +33,5 @@ does not enable browser playback or transcode media.
 
 HTTP connection activity is an approximation: API connections can extend
 priority, and a player that has buffered the video may close its connection
-before playback ends. A session expires after that 60-second grace period.
+before playback ends. Priority is suspended after that 60-second grace period;
+a later connection from the same device restores it until Lampa clears the session.

@@ -82,6 +82,10 @@
         if (typeof uri !== 'string' || !/^(magnet:\?|https?:\/\/)/i.test(uri)) throw new Error('rqbit: no magnet or torrent URL');
         return uri;
     }
+    function titleText(value) {
+        return String(value).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+    }
     function videos(files) {
         return files.map(function (f, i) { return { file: f, id: i }; }).filter(function (item) {
             var name = item.file.name || '';
@@ -100,7 +104,7 @@
             var previous = L.Controller.enabled().name;
             L.Select.show({
                 title: labels.files,
-                items: list.map(function (v) { return { title: v.file.name, file_id: v.id }; }),
+                items: list.map(function (v) { return { title: titleText(v.file.name), file_id: v.id }; }),
                 onSelect: function (item) { L.Controller.toggle(previous); L.Loading.start(); resolve(item.file_id); },
                 onBack: function () { L.Controller.toggle(previous); resolve(null); }
             });
@@ -114,7 +118,7 @@
             var all = files.map(function (_, i) { return i; });
             L.Select.show({ title: labels.keep,
                 items: [{ title: '\u0412\u0441\u0435 \u0444\u0430\u0439\u043b\u044b', ids: all }].concat(files.map(function (file, id) {
-                    return { title: file.name, ids: [id] };
+                    return { title: titleText(file.name), ids: [id] };
                 })),
                 onSelect: function (item) { L.Controller.toggle(previous); L.Loading.start(); resolve(item.ids); },
                 onBack: function () { L.Controller.toggle(previous); resolve(null); }
