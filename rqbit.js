@@ -19,7 +19,7 @@
             });
         });
     }
-    function available() { return api('status',{},1800).then(function(s) { return s.server === 'cudy-downloads-v2' && s.device === DEVICE && s.mounted && s.running; }).catch(function() { return false; }); }
+    function available(libraryMode) { return api('status',{},1800).then(function(s) { return s.server === 'cudy-downloads-v2' && s.device === DEVICE && (libraryMode && s.library_available !== undefined ? s.library_available : s.mounted && s.running); }).catch(function() { return false; }); }
     function previous() { return L.Controller.enabled().name; }
     function notify(e) { L.Noty.show(e.message || String(e)); }
     function source(e) { var s=e.MagnetUri || e.Link; if (typeof s!=='string' || !/^(magnet:\?|https?:\/\/)/i.test(s)) throw Error('Нет magnet или ссылки на torrent'); return s; }
@@ -65,7 +65,7 @@
             ticket=r.ticket; return ready(ticket,Date.now()+180000);
         }).then(function(s) { L.Loading.stop(); return choose(s.files); }).then(function(ids) {
             if (ids===null) return api('add_cancel',{ticket:ticket});
-            L.Loading.start(); return api('add_commit',{ticket:ticket,files:ids}).then(function() { ticket=null; L.Noty.show('Загрузка на флешку добавлена'); });
+            L.Loading.start(); return api('add_commit',{ticket:ticket,files:ids}).then(function(r) { ticket=null; L.Noty.show(r.phase==='moving'?'Подготовка раздачи к докачке':'Загрузка на флешку добавлена'); });
         }).catch(function(e) { if (ticket) api('add_cancel',{ticket:ticket}).catch(function(){}); notify(e); }).then(function() { L.Loading.stop(); });
     }
     function watched(hash,id) { return !!L.Storage.get('cudy_downloads_seen',{})[hash+':'+id]; }
@@ -97,9 +97,9 @@
     }
     function library() {
         var parent=previous(); L.Loading.start();
-        return available().then(function(ok){if(!ok) throw Error(labels.unavailable);return api('library');}).then(function(r) {
+        return available(true).then(function(ok){if(!ok) throw Error(labels.unavailable);return api('library');}).then(function(r) {
             L.Loading.stop();
-            if (!r.albums.length) { L.Noty.show(labels.empty); return; }
+            if (!r.albums.length) { var moving=(r.transfers||[])[0]; L.Noty.show(moving ? (moving.error || 'Файлы переносятся между разделами') : labels.empty); return; }
             function show() {
                 L.Select.show({title:labels.library,items:sorted(r.albums).map(function(a) {
                     return {title:text(a.name),subtitle:a.folder?a.files.length+' файлов':'Видео',album:a,eye:!a.folder && a.files.length===1 && watched(a.hash,a.files[0].index)};

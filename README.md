@@ -9,10 +9,13 @@ https://ishenko.github.io/lampa-rqbit/rqbit.js
 
 - Short tap preserves Lampa's original TorrServer action.
 - Long tap offers the device's local torrent client, including away from home.
-- USB download appears only when the paired router and USB are available.
+- USB download appears only when the paired router and both USB partitions are available.
 - Select several episodes/files or all files; later selections accumulate.
-- Downloaded videos appear in "Скачанное", grouped into folders. Only complete
-  files can be opened. Eye marks are saved on each device when opening a file.
+- Active downloads use ext4. After all selected files finish, a verified transfer
+  publishes them on exFAT Storage in "Скачанное", grouped into folders.
+- Adding episodes moves the torrent back to ext4 and hides it until it finishes
+  again. Eye marks are saved on each device by torrent and file index.
+- Already archived files remain available when only the exFAT partition is mounted.
 - Downloads stop seeding on completion. No TEMP cleanup or playback priority.
 
 Requires the matching /cgi-bin/cudy-downloads helper on 192.168.1.1,
