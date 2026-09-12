@@ -6,7 +6,9 @@
     var L = root.Lampa, API = 'http://192.168.1.1/cgi-bin/cudy-downloads';
     var DEVICE = '5c935c65-6057-4f38-9f73-0e836eadb521';
     var labels = { local: 'Скачать локально', usb: 'Скачать на флешку', library: 'Скачанное',
-        unavailable: 'Cudy или флешка недоступны', empty: 'Пока нет скачанных видео' };
+        unavailable: 'Cudy или флешка недоступны', empty: 'Пока нет загрузок' };
+    var refreshTimer, refreshVersion=0;
+    function stopRefresh() { refreshVersion++; if(refreshTimer) root.clearTimeout(refreshTimer); refreshTimer=null; }
     function text(s) { return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;'); }
     function api(action, data, timeout) {
         data = data || {}; data.action = action;
@@ -72,49 +74,125 @@
     function drawEye(item,data) {
         if(data.eye) item.find('.selectbox-item__title').append(L.Template.get('icon_viewed',{},true).replace('<svg','<svg style="width:1em;height:1em;vertical-align:middle;margin-left:0.5em"'));
     }
-    function play(album,file) {
+    function play(album,file,back) {
         try {
-            L.Android.openPlayer(file.url,{title:file.name,position:-1});
+            if (!file.url || file.ready===false) throw Error('Файл ещё не скачан');
+            var playlist=sorted(album.files || [file]).filter(function(f){return f.url && f.ready!==false;}).map(function(f){return {url:f.url,title:f.name.split('/').pop()};});
+            var data={url:file.url,title:file.name.split('/').pop(),playlist:playlist};
+            if(L.Platform && L.Platform.is('android')) data.launch_player='android';
+            // Android uses the native external-player chooser; browsers retain their player settings.
+            if(L.Player.runas) L.Player.runas(false);
+            L.Player.play(data);
+            if(L.Player.runas) L.Player.runas(false);
+            if (L.Player.playlist) L.Player.playlist(playlist);
+            if (L.Player.callback) L.Player.callback(back || library);
             var seen=L.Storage.get('cudy_downloads_seen',{}); seen[album.hash+':'+file.index]=true;
             L.Storage.set('cudy_downloads_seen',seen);
+            return true;
         } catch(e) { notify(e); }
+        return false;
+    }
+    function bytes(n) {
+        if(L.Utils && L.Utils.bytesToSize) return L.Utils.bytesToSize(n || 0);
+        var units=['B','KiB','MiB','GiB','TiB'], i=0; n=n || 0;
+        while(n>=1024 && i<units.length-1) {n/=1024;i++;}
+        return n.toFixed(i?1:0)+' '+units[i];
+    }
+    function percent(done,total) { return total ? Math.min(100,100*done/total).toFixed(1)+'%' : '0%'; }
+    function downloadText(album) {
+        var d=album.download;
+        if(!d) return album.files.length+' файлов';
+        var states={finished:'Скачано',paused:'Пауза',queued:'В очереди',checking:'Проверка',metadata:'Получение списка файлов',error:'Ошибка',live:'Скачивается'};
+        return (states[d.state] || d.state)+' · '+percent(d.progress,d.total)+' · '+bytes(d.progress)+' / '+bytes(d.total)+' · '+bytes((d.down || 0)*1048576)+'/с'+(d.error?' · '+d.error:'');
+    }
+    function manage(album,back) {
+        stopRefresh();
+        var d=album.download || {}, ready=album.files.filter(function(f){return f.url && f.ready!==false;}), items=[];
+        if(ready.length) items.push({title:album.folder?'Открыть файлы':'Смотреть',watch:true});
+        else if(album.files.length) items.push({title:'Файлы',watch:true});
+        if(!d.finished) items.push({title:d.paused?'Продолжить':'Пауза',action:d.paused?'resume':'pause'});
+        items.push({title:'Удалить торрент и файлы',action:'delete'});
+        function perform(action) {
+            L.Loading.start();
+            return api(action,{hash:album.hash,confirm:action==='delete'}).then(function(){L.Loading.stop();back();},function(e){L.Loading.stop();notify(e);back();});
+        }
+        L.Select.show({title:album.name,items:items.map(function(item){item.subtitle=text(downloadText(album));return item;}),onBack:back,onSelect:function(row){
+            if(row.watch) {
+                if(!album.folder && ready.length===1) {
+                    L.Controller.toggle('content');
+                    if(!play(album,ready[0],function(){manage(album,back);})) manage(album,back);
+                } else folder(album,'',function(){manage(album,back);});
+            } else if(row.action==='delete') {
+                L.Select.show({title:'Удалить '+album.name+'?',items:[{title:'Отмена'},{title:'Удалить торрент и его файлы с флешки',remove:true}],onBack:function(){manage(album,back);},onSelect:function(choice){
+                    if(choice.remove) perform('delete'); else manage(album,back);
+                }});
+            } else perform(row.action);
+        }});
     }
     function folder(album,prefix,back) {
+        stopRefresh();
         var dirs={}, rows=[];
         sorted(album.files).forEach(function(f) {
             if (f.name.indexOf(prefix)!==0) return;
             var tail=f.name.slice(prefix.length), slash=tail.indexOf('/');
             if (slash>=0) dirs[tail.slice(0,slash)]=true;
-            else rows.push({title:text(tail),file:f,eye:watched(album.hash,f.index)});
+            else rows.push({title:text(tail),subtitle:bytes(f.size)+(f.url?'':' · '+percent(f.completed || 0,f.size)),file:f,eye:watched(album.hash,f.index),ghost:!f.url});
         });
         var items=Object.keys(dirs).sort(function(a,b){return a.localeCompare(b,undefined,{numeric:true});}).map(function(d){return {title:text(d),subtitle:'Папка',dir:prefix+d+'/'};}).concat(rows);
-        L.Select.show({title:prefix ? prefix.replace(/\/$/,'') : text(album.name),items:items,
+        L.Select.show({title:prefix ? prefix.replace(/\/$/,'').split('/').pop() : album.name,items:items,
             onDraw:drawEye,
             onBack:back,onSelect:function(row) {
                 if (row.dir) folder(album,row.dir,function(){folder(album,prefix,back);});
-                else { play(album,row.file); folder(album,prefix,back); }
+                else {
+                    L.Controller.toggle('content');
+                    if(!play(album,row.file,function(){folder(album,prefix,back);})) folder(album,prefix,back);
+                }
             }});
     }
     function library() {
-        var parent=previous(); L.Loading.start();
+        stopRefresh();
+        var parent=previous()==='select'?'content':previous(), loadVersion=refreshVersion;
+        L.Loading.start();
         return available().then(function(ok){if(!ok) throw Error(labels.unavailable);return api('library');}).then(function(r) {
             L.Loading.stop();
+            if(loadVersion!==refreshVersion) return;
             if (!r.albums.length) { L.Noty.show(labels.empty); return; }
             function show() {
-                L.Select.show({title:labels.library,items:sorted(r.albums).map(function(a) {
-                    return {title:text(a.name),subtitle:a.folder?a.files.length+' файлов':'Видео',album:a,eye:!a.folder && a.files.length===1 && watched(a.hash,a.files[0].index)};
-                }),onDraw:drawEye,
-                onBack:function(){L.Controller.toggle(parent);},onSelect:function(row) {
-                    if(row.album.files.length===1 && !row.album.folder) {play(row.album,row.album.files[0]);show();}
-                    else folder(row.album,'',show);
-                }});
+                stopRefresh();
+                var rows={}, items=sorted(r.albums).map(function(a) {
+                    return {title:text(a.name),subtitle:text(downloadText(a)),album:a,eye:!a.folder && a.files.length===1 && watched(a.hash,a.files[0].index)};
+                });
+                L.Select.show({title:labels.library,items:items,
+                    onDraw:function(item,data){drawEye(item,data);rows[data.album.hash]={node:item,data:data};},
+                    onBack:function(){stopRefresh();L.Controller.toggle(parent);},
+                    onSelect:function(row){stopRefresh();manage(row.album,library);}
+                });
+                var version=refreshVersion;
+                function tick() {
+                    refreshTimer=root.setTimeout(function(){
+                        if(version!==refreshVersion) return;
+                        api('library').then(function(next){
+                            if(version!==refreshVersion) return;
+                            r=next;
+                            if(next.albums.length!==items.length || next.albums.some(function(a){return !rows[a.hash];})) {show();return;}
+                            next.albums.forEach(function(a){var row=rows[a.hash];row.data.album=a;row.node.find('.selectbox-item__subtitle').text(downloadText(a));});
+                            tick();
+                        }).catch(function(e){if(version===refreshVersion) {stopRefresh();notify(e);}});
+                    },5000);
+                }
+                tick();
             }
             show();
         }).catch(notify).then(function(){L.Loading.stop();});
     }
     function install() {
-        if (!L || root.cudy_downloads_installed || !L.Android || !L.Reguest) return;
+        if (!L || root.cudy_downloads_installed || !L.Reguest) return;
         root.cudy_downloads_installed=true;
+        if(L.Select.listener) {
+            L.Select.listener.follow('hide',stopRefresh);
+            L.Select.listener.follow('preshow',stopRefresh);
+        }
+        if(root.addEventListener) root.addEventListener('pagehide',stopRefresh);
         ['cudy_rqbit_user','cudy_rqbit_password','cudy_rqbit_client','cudy_rqbit_playback'].forEach(function(k){if(L.Storage.remove)L.Storage.remove(k);});
         L.Listener.follow('torrent',function(e) {
             if(e.type!=='render' || !e.item || e.item.data('cudy_downloads')) return;
@@ -139,5 +217,5 @@
         function menu() { L.Menu.addButton(L.Template.get('icon_collection',{},true),labels.library,library); }
         if(root.appready)menu(); else L.Listener.follow('app',function(e){if(e.type==='ready')menu();});
     }
-    return {install:install,available:available,choose:choose,download:download,library:library,play:play,labels:labels};
+    return {install:install,available:available,choose:choose,download:download,library:library,play:play,manage:manage,stopRefresh:stopRefresh,downloadText:downloadText,labels:labels};
 }));
