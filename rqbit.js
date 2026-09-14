@@ -13,6 +13,14 @@
     function api(action, data, timeout) {
         data = data || {}; data.action = action;
         return new Promise(function (resolve, reject) {
+            if (root.document && (action === 'status' || action === 'library')) {
+                var cb = '__cudy_cb_' + Date.now(), script = root.document.createElement('script');
+                root[cb] = function (r) { try { delete root[cb]; script.remove(); if (r.error) throw Error(r.error); resolve(r); } catch (e) { reject(e); } };
+                script.onerror = function () { delete root[cb]; script.remove(); reject(Error(labels.unavailable)); };
+                script.src = API + '?action=' + action + '&callback=' + cb;
+                root.document.head.appendChild(script);
+                return;
+            }
             // Use an explicit browser request; Lampa's native wrapper differs between builds.
             if (root.XMLHttpRequest) {
                 var xhr = new root.XMLHttpRequest(), settled = false;
