@@ -13,6 +13,24 @@
     function api(action, data, timeout) {
         data = data || {}; data.action = action;
         return new Promise(function (resolve, reject) {
+            // Use an explicit browser request; Lampa's native wrapper differs between builds.
+            if (root.XMLHttpRequest) {
+                var xhr = new root.XMLHttpRequest(), settled = false;
+                function fail(e) { if (!settled) { settled = true; reject(e instanceof Error ? e : Error(labels.unavailable)); } }
+                xhr.open('POST', API, true);
+                xhr.timeout = timeout || 20000;
+                xhr.setRequestHeader('Content-Type', 'application/json');
+                xhr.onreadystatechange = function () {
+                    if (xhr.readyState !== 4 || settled) return;
+                    if (xhr.status < 200 || xhr.status >= 300) return fail(Error(labels.unavailable));
+                    try { var r = JSON.parse(xhr.responseText || '{}'); if (r.error) throw Error(r.error); settled = true; resolve(r); }
+                    catch (e) { fail(e); }
+                };
+                xhr.onerror = function () { fail(Error(labels.unavailable)); };
+                xhr.ontimeout = function () { fail(Error(labels.unavailable)); };
+                try { xhr.send(JSON.stringify(data)); } catch (e) { fail(e); }
+                return;
+            }
             new L.Reguest().native(API, function (r) {
                 try { if (typeof r === 'string') r = JSON.parse(r); if (r.error) throw Error(r.error); resolve(r); }
                 catch (e) { reject(e); }
