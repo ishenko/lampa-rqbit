@@ -13,13 +13,6 @@
     function api(action, data, timeout) {
         data = data || {}; data.action = action;
         return new Promise(function (resolve, reject) {
-            if (action === 'status' || action === 'library') {
-                new L.Reguest().native(API + '?action=' + action, function (r) {
-                    try { if (typeof r === 'string') r = JSON.parse(r); if (r.error) throw Error(r.error); resolve(r); }
-                    catch (e) { reject(e); }
-                }, function () { reject(Error(labels.unavailable)); });
-                return;
-            }
             new L.Reguest().native(API, function (r) {
                 try { if (typeof r === 'string') r = JSON.parse(r); if (r.error) throw Error(r.error); resolve(r); }
                 catch (e) { reject(e); }
