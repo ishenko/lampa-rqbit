@@ -24,7 +24,7 @@
                 try { if (typeof r === 'string') r = JSON.parse(r); if (r.error) throw Error(r.error); resolve(r); }
                 catch (e) { reject(e); }
             }, function () { reject(Error(labels.unavailable)); }, JSON.stringify(data), {
-                type: 'POST', dataType: 'json', timeout: timeout || 20000, headers: {'Content-Type':'application/json'}
+                type: 'POST', dataType: 'json', timeout: timeout || 20000, headers: {'Content-Type':'text/plain'}
             });
         });
     }
